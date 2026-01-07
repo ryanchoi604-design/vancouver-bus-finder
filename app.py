@@ -40,16 +40,39 @@ def load_static():
 trips_df, stops_df = load_static()
 
 # ========================
-# 실시간 GTFS 로드
+# 실시간 GTFS 로드 (안전하게)
 @st.cache_data(ttl=15)
 def load_feed():
-    feed = gtfs_realtime_pb2.FeedMessage()
     url = f"https://gtfs.translink.ca/v2/gtfsrealtime?apikey={API_KEY}"
-    r = requests.get(url, timeout=15)
-    feed.ParseFromString(r.content)
-    return feed
+    headers = {
+        "Accept": "application/x-protobuf",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+    }
+    try:
+        r = requests.get(url, headers=headers, timeout=15)
+        if r.status_code != 200:
+            st.warning(f"📡 GTFS 서버 응답 코드: {r.status_code}. 잠시 후 다시 시도하세요.")
+            return None
+        if not r.content:
+            st.warning("📡 서버에서 빈 데이터를 받았습니다. 잠시 후 다시 시도하세요.")
+            return None
+
+        feed = gtfs_realtime_pb2.FeedMessage()
+        try:
+            feed.ParseFromString(r.content)
+        except Exception:
+            st.warning("📡 ProtoBuf 데이터 파싱 실패! 서버가 HTML이나 오류 페이지를 내려줬을 수 있습니다.")
+            return None
+        return feed
+    except Exception as e:
+        st.warning(f"📡 서버 연결 실패: {e}")
+        return None
 
 feed = load_feed()
+
+if feed is None:
+    st.info("💡 팁: Cloud 서버가 차단되었을 수 있습니다. \n- 다른 네트워크(IP)에서 시도\n- 핫스팟 연결\n- 잠시 기다렸다 재접속")
+    st.stop()
 
 # ========================
 # 차량 정보 & trip_update 정리
@@ -128,9 +151,7 @@ if st.button("🎯 버스 번호 찾기", use_container_width=True):
         if tu and tu.stop_time_update:
             next_stop = tu.stop_time_update[0]
             stop_id = next_stop.stop_id
-
             stop_name = stops_df[stops_df["stop_id"] == stop_id]["stop_name"].values
-
             if next_stop.arrival.time:
                 arrival = datetime.datetime.fromtimestamp(next_stop.arrival.time)
                 mins = int((arrival - datetime.datetime.now()).total_seconds() / 60)
