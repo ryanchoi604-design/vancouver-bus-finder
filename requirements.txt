@@ -1,4 +1,5 @@
-streamlit>=1.30
-pandas
+flask
 requests
+streamlit
+pandas
 gtfs-realtime-bindings
