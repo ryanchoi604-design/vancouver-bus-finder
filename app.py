@@ -1,89 +1,51 @@
 import streamlit as st
-import pandas as pd
 import requests
-from google.transit import gtfs_realtime_pb2
 
 # 트랜스링크 API 키
 API_KEY = "i95CeGKk3M7wzbteE3cl"
 
-st.set_page_config(page_title="Juho's Bus Tracker", layout="wide")
-st.title("🎯 실시간 블락 저격기 (V30)")
+st.set_page_config(page_title="Ryan's One-Shot Sniper", layout="centered")
 
-# 1. 파일 로드 함수
-@st.cache_resource
-def load_data():
+# 화면 구성은 최대한 심플하게
+st.title("🎯 버스 번호 저격기 (Final)")
+st.write("노선과 블락만 넣으세요. 자동차 번호만 딱 찾아드립니다.")
+
+# 입력창
+in_route = st.text_input("1. 노선 번호 (Route)", "25").strip()
+in_block = st.text_input("2. 블락 번호 (Block)", "42").strip()
+
+if st.button("지금 버스 번호 찾기 🚀"):
+    # 온라인 서버에서는 이 주소가 가장 정확하고 빠릅니다.
+    url = f"https://api.translink.ca/rttiapi/v1/buses?apikey={API_KEY}&routeNo={in_route}"
+    headers = {'Accept': 'application/json'}
+    
     try:
-        # 깃허브에 올린 파일들을 읽어옵니다.
-        trips = pd.read_csv("trips.txt", dtype=str)
-        routes = pd.read_csv("routes.txt", dtype=str)
-        # 공백 제거 등 데이터 정리
-        trips['trip_id'] = trips['trip_id'].str.strip()
-        trips['block_id'] = trips['block_id'].str.strip()
-        routes['route_short_name'] = routes['route_short_name'].str.strip()
-        routes['route_id'] = routes['route_id'].str.strip()
-        return trips, routes
-    except Exception as e:
-        st.error(f"❌ 파일을 찾을 수 없습니다: {e}")
-        return None, None
-
-trips_db, routes_db = load_data()
-
-# 2. 사이드바 입력창
-with st.sidebar:
-    st.header("🔍 검색 설정")
-    in_route = st.text_input("노선 번호 (예: 301, 25)", "301").strip()
-    in_block = st.text_input("블락 번호 (예: 4, 17)", "4").strip()
-
-# 3. 찾기 버튼
-if st.button("내 버스 실시간 확인 🚀"):
-    if trips_db is not None:
-        with st.spinner("📡 데이터를 분석 중입니다..."):
-            # 노선 ID 확인
-            route_match = routes_db[routes_db['route_short_name'] == in_route]
-            if route_match.empty:
-                # 0을 붙여서 재시도 (예: 25 -> 025)
-                route_match = routes_db[routes_db['route_short_name'] == in_route.zfill(3)]
+        with st.spinner("📡 실시간 데이터 조회 중..."):
+            response = requests.get(url, headers=headers, timeout=10)
             
-            if route_match.empty:
-                st.error(f"❌ '{in_route}' 노선을 찾을 수 없습니다.")
-            else:
-                r_id = route_match.iloc[0]['route_id']
+            if response.status_code == 200:
+                buses = response.json()
+                found_vid = None
                 
-                # 실시간 API 호출
-                tu_url = f"https://gtfsapi.translink.ca/v3/gtfsrealtime?apikey={API_KEY}"
-                pos_url = f"https://gtfsapi.translink.ca/v3/gtfsposition?apikey={API_KEY}"
+                # 배차표 블락(BlockNo)과 실시간 데이터 매칭
+                for bus in buses:
+                    if str(bus['BlockNo']).lstrip('0') == in_block.lstrip('0'):
+                        found_vid = bus['VehicleNo']
+                        break
                 
-                tu_resp = requests.get(tu_url)
-                pos_resp = requests.get(pos_url)
-                
-                tu_feed = gtfs_realtime_pb2.FeedMessage()
-                tu_feed.ParseFromString(tu_resp.content)
-                pos_feed = gtfs_realtime_pb2.FeedMessage()
-                pos_feed.ParseFromString(pos_resp.content)
-
-                found_bus = None
-                # 기계식 블락 ID 매칭 로직
-                for entity in tu_feed.entity:
-                    if entity.HasField('trip_update'):
-                        tu = entity.trip_update
-                        if tu.trip.route_id == r_id:
-                            match = trips_db[trips_db['trip_id'] == tu.trip.trip_id]
-                            if not match.empty:
-                                b_id = match.iloc[0]['block_id']
-                                # 입력한 블락 번호가 시스템 ID에 포함되는지 확인
-                                if in_block in b_id:
-                                    found_bus = {"vid": tu.vehicle.id, "b_id": b_id}
-                                    break
-
-                if found_bus:
-                    # 위치 정보 표시
-                    for entity in pos_feed.entity:
-                        if entity.HasField('vehicle') and entity.vehicle.vehicle.id == found_bus['vid']:
-                            st.success(f"✅ 블락 {in_block}번 차량(차번: {found_bus['vid']})을 찾았습니다!")
-                            map_df = pd.DataFrame([{"lat": entity.vehicle.position.latitude, "lon": entity.vehicle.position.longitude}])
-                            st.map(map_df, zoom=14)
-                            st.info(f"시스템 블락 ID: {found_bus['b_id']}")
-                            st.markdown(f"### [👉 T-Comm에서 확인](https://tcomm.bustrainferry.com/mobile/bus/{found_bus['vid']})")
-                            break
+                if found_vid:
+                    st.success(f"### 찾았습니다! {in_route}번-{in_block}블락")
+                    # 버스 번호를 제일 크게!
+                    st.markdown(f"<h1 style='text-align: center; color: #FF4B4B; font-size: 100px;'>{found_vid}</h1>", unsafe_allow_html=True)
+                    
+                    # T-Comm Live 직행 링크
+                    t_comm_url = f"https://tcomm.bustrainferry.com/mobile/bus/{found_vid}"
+                    st.markdown(f"### [🔗 {found_vid}호 T-Comm 위치 확인하기]({t_comm_url})")
                 else:
-                    st.error(f"❌ 현재 {in_route}번의 {in_block} 블락은 운행 중이 아닙니다.")
+                    st.warning(f"⚠️ {in_route}번 {in_block}블락은 지금 신호가 없습니다.")
+            else:
+                st.error("❌ 트랜스링크 서버에 문제가 있네요. 노선 번호를 확인해 주세요.")
+                
+    except Exception as e:
+        # 온라인에서는 아까 같은 DNS 에러가 거의 안 날 겁니다.
+        st.error(f"📡 연결 실패! 서버 상태를 확인해 주세요. ({e})")
