@@ -4,9 +4,9 @@ import requests
 import datetime
 from google.transit import gtfs_realtime_pb2
 
-# ==================================
+# ========================
 API_KEY = "i95CeGKk3M7wzbteE3cl"
-# ==================================
+# ========================
 
 st.set_page_config(
     page_title="🚌 내 버스 찾기",
@@ -14,7 +14,7 @@ st.set_page_config(
     layout="centered"
 )
 
-# 🎨 스타일
+# 🎨 배경 + 스타일
 st.markdown("""
 <style>
 body {
@@ -23,17 +23,13 @@ body {
 }
 .big-bus { font-size: 80px; font-weight: bold; color: #FF4B4B; text-align: center; }
 .medium { font-size: 25px; text-align: center; }
-.button-big { font-size: 20px !important; height: 3em; }
 </style>
 """, unsafe_allow_html=True)
-
-# 🔄 15초 자동 갱신
-st.autorefresh(interval=15000, key="refresh")
 
 st.title("🚌 내 버스 찾기 (Block Finder)")
 st.caption("라인 번호 + 블락 번호 → 🚀 지금 운행 중인 차량 번호")
 
-# ======================
+# ========================
 # 정적 데이터 로드
 @st.cache_data
 def load_static():
@@ -43,7 +39,7 @@ def load_static():
 
 trips_df, stops_df = load_static()
 
-# ======================
+# ========================
 # 실시간 GTFS 로드
 @st.cache_data(ttl=15)
 def load_feed():
@@ -55,7 +51,7 @@ def load_feed():
 
 feed = load_feed()
 
-# ======================
+# ========================
 # 차량 정보 & trip_update 정리
 vehicles = {}
 trip_updates = {}
@@ -70,13 +66,13 @@ for e in feed.entity:
     if e.HasField("trip_update"):
         trip_updates[e.trip_update.trip.trip_id] = e.trip_update
 
-# ======================
+# ========================
 # 즐겨찾기
 st.sidebar.header("⭐ 즐겨찾기")
 if 'favorites' not in st.session_state:
     st.session_state['favorites'] = []
 
-# ======================
+# ========================
 # 노선 선택
 routes = sorted(trips_df["route_id"].unique())
 route = st.selectbox("🚏 노선 선택", routes)
@@ -94,7 +90,7 @@ if st.session_state['favorites']:
     if fav_route != route:
         route = fav_route
 
-# ======================
+# ========================
 # 블락 선택 (운행 중만)
 route_trips = trips_df[trips_df["route_id"] == route]
 active_blocks = sorted(route_trips[
@@ -107,7 +103,7 @@ if not active_blocks:
 
 block = st.selectbox("🧱 블락 선택 (운행 중만)", active_blocks)
 
-# ======================
+# ========================
 # 검색 버튼
 if st.button("🎯 버스 번호 찾기", use_container_width=True):
 
@@ -144,4 +140,4 @@ if st.button("🎯 버스 번호 찾기", use_container_width=True):
         tcomm = f"https://tcomm.bustrainferry.com/mobile/bus/{bus['id']}"
         st.markdown(f"### 🔗 [T-Comm Live에서 실시간 위치 보기]({tcomm})")
 
-        st.caption("🔄 15초마다 자동 업데이트 중")
+        st.caption("⏱ 페이지 새로고침 시 최신 정보 갱신")
