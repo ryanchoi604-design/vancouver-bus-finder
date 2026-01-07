@@ -1,18 +1,13 @@
 import streamlit as st
 import pandas as pd
 import requests
-import datetime
 from google.transit import gtfs_realtime_pb2
 
 # ========================
 API_KEY = "i95CeGKk3M7wzbteE3cl"
 # ========================
 
-st.set_page_config(
-    page_title="🚌 내 버스 찾기",
-    page_icon="🚌",
-    layout="centered"
-)
+st.set_page_config(page_title="🚌 내 버스 찾기", page_icon="🚌", layout="centered")
 
 # 🎨 배경 + 스타일
 st.markdown("""
@@ -23,142 +18,97 @@ body {
 }
 .big-bus { font-size: 80px; font-weight: bold; color: #FF4B4B; text-align: center; }
 .medium { font-size: 25px; text-align: center; }
+.st-button {
+    font-size: 18px;
+    font-weight: bold;
+}
 </style>
 """, unsafe_allow_html=True)
 
-st.title("🚌 내 버스 찾기 (Block Finder)")
+st.title("🚌 내 버스 찾기")
 st.caption("라인 번호 + 블락 번호 → 🚀 지금 운행 중인 차량 번호")
 
 # ========================
-# 정적 데이터 로드
+# 정적 trips 데이터
 @st.cache_data
-def load_static():
-    trips = pd.read_csv("trips.txt", dtype=str)
-    stops = pd.read_csv("stops.txt", dtype=str)
-    return trips, stops
+def load_trips():
+    return pd.read_csv("trips.txt", dtype=str)
 
-trips_df, stops_df = load_static()
+trips_df = load_trips()
 
 # ========================
-# 실시간 GTFS 로드 (안전하게)
-@st.cache_data(ttl=15)
-def load_feed():
-    url = f"https://gtfs.translink.ca/v2/gtfsrealtime?apikey={API_KEY}"
-    headers = {
-        "Accept": "application/x-protobuf",
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
-    }
-    try:
-        r = requests.get(url, headers=headers, timeout=15)
-        if r.status_code != 200:
-            st.warning(f"📡 GTFS 서버 응답 코드: {r.status_code}. 잠시 후 다시 시도하세요.")
-            return None
-        if not r.content:
-            st.warning("📡 서버에서 빈 데이터를 받았습니다. 잠시 후 다시 시도하세요.")
-            return None
-
-        feed = gtfs_realtime_pb2.FeedMessage()
-        try:
-            feed.ParseFromString(r.content)
-        except Exception:
-            st.warning("📡 ProtoBuf 데이터 파싱 실패! 서버가 HTML이나 오류 페이지를 내려줬을 수 있습니다.")
-            return None
-        return feed
-    except Exception as e:
-        st.warning(f"📡 서버 연결 실패: {e}")
-        return None
-
-feed = load_feed()
-
-if feed is None:
-    st.info("💡 팁: Cloud 서버가 차단되었을 수 있습니다. \n- 다른 네트워크(IP)에서 시도\n- 핫스팟 연결\n- 잠시 기다렸다 재접속")
-    st.stop()
+# 즐겨찾기 관리
+if "favorites" not in st.session_state:
+    st.session_state["favorites"] = []
 
 # ========================
-# 차량 정보 & trip_update 정리
-vehicles = {}
-trip_updates = {}
-for e in feed.entity:
-    if e.HasField("vehicle"):
-        v = e.vehicle
-        if v.trip.trip_id and v.vehicle.id:
-            vehicles[v.trip.trip_id] = {
-                "id": v.vehicle.id,
-                "type": v.vehicle.label or "Unknown"
-            }
-    if e.HasField("trip_update"):
-        trip_updates[e.trip_update.trip.trip_id] = e.trip_update
-
-# ========================
-# 즐겨찾기
-st.sidebar.header("⭐ 즐겨찾기")
-if 'favorites' not in st.session_state:
-    st.session_state['favorites'] = []
-
-# ========================
-# 노선 선택
+# UI: 노선 선택
 routes = sorted(trips_df["route_id"].unique())
 route = st.selectbox("🚏 노선 선택", routes)
 
-# 즐겨찾기 추가 버튼
-if route not in st.session_state['favorites']:
-    if st.sidebar.button(f"➕ '{route}' 즐겨찾기 추가"):
-        st.session_state['favorites'].append(route)
+# 즐겨찾기 추가
+if route not in st.session_state["favorites"]:
+    if st.button(f"➕ '{route}' 즐겨찾기 추가", key="fav_add"):
+        st.session_state["favorites"].append(route)
 
 # 즐겨찾기 바로가기
-if st.session_state['favorites']:
-    fav_route = st.sidebar.selectbox("🔥 즐겨찾기 노선 바로가기",
-                                     st.session_state['favorites'],
-                                     key="fav_select")
+if st.session_state["favorites"]:
+    fav_route = st.selectbox("🔥 즐겨찾기 노선 바로가기",
+                             st.session_state["favorites"],
+                             key="fav_select")
     if fav_route != route:
         route = fav_route
 
 # ========================
-# 블락 선택 (운행 중만)
+# 블락 선택 (운행 중인 것만)
 route_trips = trips_df[trips_df["route_id"] == route]
-active_blocks = sorted(route_trips[
-    route_trips["trip_id"].isin(vehicles.keys())
-]["block_id"].unique())
-
-if not active_blocks:
-    st.warning("😴 지금 운행 중인 블락이 없어")
-    st.stop()
-
-block = st.selectbox("🧱 블락 선택 (운행 중만)", active_blocks)
+active_blocks = sorted(route_trips["block_id"].unique())
+block = st.selectbox("🧱 블락 선택", active_blocks)
 
 # ========================
 # 검색 버튼
-if st.button("🎯 버스 번호 찾기", use_container_width=True):
+if st.button("🎯 차량 번호 찾기", key="search"):
 
-    matched = route_trips[
-        (route_trips["block_id"] == block) &
-        (route_trips["trip_id"].isin(vehicles.keys()))
+    matched_trips = route_trips[
+        route_trips["block_id"].str.lstrip('0') == block.lstrip('0')
     ]
+    trip_ids = matched_trips["trip_id"].tolist()
 
-    if matched.empty:
-        st.warning("😅 버스가 현재 운행 중이지 않아")
+    if not trip_ids:
+        st.warning("😅 해당 블락 정보가 trips.txt에 없거나 운행 중이지 않을 수 있음")
     else:
-        trip_id = matched.iloc[0]["trip_id"]
-        bus = vehicles[trip_id]
+        # GTFS 실시간 호출
+        url = f"https://gtfs.translink.ca/v2/gtfsrealtime?apikey={API_KEY}"
+        headers = {"Accept": "application/x-protobuf", "User-Agent": "Mozilla/5.0"}
+        try:
+            r = requests.get(url, headers=headers, timeout=15)
+            found_vehicle = "운행 중인 차량 없음"
+            if r.status_code == 200 and r.content:
+                feed = gtfs_realtime_pb2.FeedMessage()
+                try:
+                    feed.ParseFromString(r.content)
+                    for e in feed.entity:
+                        if e.HasField("vehicle") and e.vehicle.trip.trip_id in trip_ids:
+                            found_vehicle = e.vehicle.id
+                            bus_type = e.vehicle.label or "Unknown"
+                            break
+                except Exception:
+                    found_vehicle = "알 수 없음 (ProtoBuf 파싱 실패)"
+            else:
+                found_vehicle = f"서버 문제 (응답 코드: {r.status_code})"
 
-        # 🎉 결과 출력
-        st.markdown(f"<div class='big-bus'>{bus['id']}</div>", unsafe_allow_html=True)
-        st.markdown(f"<div class='medium'>🚐 차량 타입: {bus['type']}</div>", unsafe_allow_html=True)
-        st.balloons()
+            # ========================
+            # 결과 출력
+            st.markdown(f"<div class='big-bus'>{found_vehicle}</div>", unsafe_allow_html=True)
+            if found_vehicle not in ["운행 중인 차량 없음", "알 수 없음 (ProtoBuf 파싱 실패)"] \
+               and "서버 문제" not in found_vehicle:
+                st.markdown(f"<div class='medium'>🚐 차량 타입: {bus_type}</div>", unsafe_allow_html=True)
+                tcomm_url = f"https://tcomm.bustrainferry.com/mobile/bus/{found_vehicle}"
+                st.markdown(f"### 🔗 [T-Comm Live에서 실시간 위치 보기]({tcomm_url})")
+                st.balloons()
+            else:
+                st.info("💡 차량 번호만 확인 가능, 실시간 위치는 T-Comm Live에서 확인하세요.")
 
-        # 📍 다음 정류장 ETA
-        tu = trip_updates.get(trip_id)
-        if tu and tu.stop_time_update:
-            next_stop = tu.stop_time_update[0]
-            stop_id = next_stop.stop_id
-            stop_name = stops_df[stops_df["stop_id"] == stop_id]["stop_name"].values
-            if next_stop.arrival.time:
-                arrival = datetime.datetime.fromtimestamp(next_stop.arrival.time)
-                mins = int((arrival - datetime.datetime.now()).total_seconds() / 60)
-                st.success(f"📍 다음 정류장: **{stop_name[0] if len(stop_name) else stop_id}** · 약 **{mins}분** 남음")
-
-        # 🔗 T-Comm Live 링크
-        tcomm = f"https://tcomm.bustrainferry.com/mobile/bus/{bus['id']}"
-        st.markdown(f"### 🔗 [T-Comm Live에서 실시간 위치 보기]({tcomm})")
-
-        st.caption("⏱ 페이지 새로고침 시 최신 정보 갱신")
+        except Exception as e:
+            st.error(f"📡 서버 연결 실패: {e}")
+            st.info("💡 로컬/핫스팟에서 시도하거나 잠시 후 재접속")
