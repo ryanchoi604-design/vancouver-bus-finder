@@ -2,4 +2,3 @@ streamlit>=1.30
 pandas
 requests
 gtfs-realtime-bindings
-flask
