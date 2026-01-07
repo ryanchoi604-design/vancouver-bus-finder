@@ -1,47 +1,71 @@
 # app.py
 import streamlit as st
+import requests
+from google.transit import gtfs_realtime_pb2
 
 # ================================
-# Page 설정
+# YOUR TRANS_LINK API KEY
+API_KEY = "YOUR_TRANS_LINK_API_KEY"
+GTFS_URL = f"https://gtfs.translink.ca/v2/gtfsrealtime?apikey={API_KEY}"
+# ================================
+
 st.set_page_config(
-    page_title="🚌 Bus Block Finder",
+    page_title="🚌 Vancouver Bus Finder",
     page_icon="🚌",
     layout="centered"
 )
 
-# 배경 + 타이틀
-st.markdown("""
-<div style="text-align:center; background-color:#f0f2f6; padding:20px; border-radius:15px;">
-    <h1>🚌 Bus Block Finder</h1>
-    <p>Line + Block → 🚀 Current Vehicle ID (check T-Comm Live for location)</p>
-</div>
-""", unsafe_allow_html=True)
+st.markdown(
+    """
+    <div style="text-align:center; background-color:#f0f2f6; padding:20px; border-radius:15px;">
+        <h1>🚌 Vancouver Bus Finder</h1>
+        <p>Line + Block → Current Vehicle ID</p>
+    </div>
+    """,
+    unsafe_allow_html=True
+)
 
-# 예시 데이터 (버스 번호는 임의)
 LINE_BLOCKS = {
-    "3": {"1": "V1234", "2": "V1235", "10": "V1240", "12": "V1242"},
-    "4": {"1": "V1301", "3": "V1303", "5": "V1305"},
-    "5": {"1": "V1401", "2": "V1402", "4": "V1404"},
-    "6": {"1": "V3001", "2": "V3002", "7": "V3007"},
-    "7": {"1": "V3101", "2": "V3102", "6": "V3106"},
-    "8": {"2": "V3202", "5": "V3205", "8": "V3208"},
-    "10": {"1": "V2001", "2": "V2002", "5": "V2005", "10": "V2010"}
+    "3": ["1", "2", "10", "12"],
+    "4": ["1", "3", "5"],
+    "5": ["1", "2", "4"],
+    "6": ["1", "2", "7"],
+    "7": ["1", "2", "6"],
+    "8": ["2", "5", "8"],
+    "10": ["1", "2", "5", "10"]
 }
 
-# --------------------------
-# Line / Block 선택
 col1, col2 = st.columns(2)
 with col1:
-    line = st.selectbox("Line", options=list(LINE_BLOCKS.keys()))
+    line = st.selectbox("Line", list(LINE_BLOCKS.keys()))
 with col2:
-    block = st.selectbox("Block", options=list(LINE_BLOCKS.get(line, {}).keys()))
+    block = st.selectbox("Block", LINE_BLOCKS[line])
 
-# --------------------------
-# Search 버튼 클릭
 if st.button("🚀 Find Vehicle"):
-    vehicle_id = LINE_BLOCKS.get(line, {}).get(block)
-    if vehicle_id:
-        st.success(f"🚍 Vehicle ID: {vehicle_id}")
-        st.markdown(f"[🔗 Check location on T-Comm Live](https://tcomm.bustrainferry.com/mobile/bus/{vehicle_id})")
-    else:
-        st.warning("💤 No vehicle found. Maybe it's still at the depot or not started yet.")
+    st.info(f"Searching Line {line} / Block {block} ...")
+    try:
+        r = requests.get(GTFS_URL, timeout=10)
+        if r.status_code != 200:
+            st.error(f"GTFS request failed! Status code: {r.status_code}")
+        else:
+            feed = gtfs_realtime_pb2.FeedMessage()
+            feed.ParseFromString(r.content)
+
+            found_vehicle = None
+            for entity in feed.entity:
+                if entity.HasField("trip_update"):
+                    trip_id = entity.trip_update.trip.trip_id
+                    if f"_{line}_{block}" in trip_id:
+                        if entity.trip_update.vehicle.id:
+                            found_vehicle = entity.trip_update.vehicle.id
+                            break
+
+            if found_vehicle:
+                st.success(f"🚍 Vehicle ID: {found_vehicle}")
+                st.markdown(f"[🔗 View live location](https://tcomm.bustrainferry.com/mobile/bus/{found_vehicle})")
+            else:
+                st.warning("💤 No vehicle currently running for this Line/Block.")
+
+    except Exception as e:
+        st.error(f"⚠️ Error: {e}")
+        st.info("Check your network or API key.")
