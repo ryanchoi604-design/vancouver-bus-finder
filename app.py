@@ -1,90 +1,85 @@
-# app.py - Streamlit Bus Finder with Render Proxy
-
 import streamlit as st
 import requests
-from google.transit import gtfs_realtime_pb2
+import pandas as pd
+import time
 
-# ================================
-# Render proxy server URL
+# =========================
+# 설정
+# =========================
 PROXY_URL = "https://vancouver-bus-finder.onrender.com/gtfs"
-# ================================
+REQUEST_TIMEOUT = 20
 
-# Page setup
 st.set_page_config(
     page_title="🚌 Bus Block Finder",
-    page_icon="🚌",
     layout="centered"
 )
 
-# Header
-st.markdown(
-    """
-    <div style="text-align:center; background-color:#f0f2f6; padding:20px; border-radius:15px;">
-        <h1>🚌 Bus Block Finder</h1>
-        <p>Line + Block → 🚀 Find the vehicle currently in service</p>
-    </div>
-    """,
-    unsafe_allow_html=True
-)
+st.title("🚌 Bus Block Finder")
+st.write("Line + Block → 🚀 Find the vehicle currently in service")
 
-# Example line/block data
-LINE_BLOCKS = {
-    "3": ["1", "2", "10", "12"],
-    "4": ["1", "3", "5"],
-    "5": ["1", "2", "4"],
-    "6": ["1", "2", "7"],
-    "7": ["1", "2", "6"],
-    "8": ["2", "5", "8"],
-    "10": ["1", "2", "5", "10"]
-}
+# =========================
+# 입력 UI
+# =========================
+line_number = st.text_input("Line Number", "")
+block_number = st.text_input("Block Number", "")
 
-# --------------------------
-# 1️⃣ Select Line / Block
-col1, col2 = st.columns(2)
+# =========================
+# 버튼
+# =========================
+if st.button("Find Bus"):
+    if not line_number or not block_number:
+        st.warning("Line Number와 Block Number를 모두 입력하세요.")
+        st.stop()
 
-with col1:
-    line = st.selectbox("Line Number", options=list(LINE_BLOCKS.keys()))
-
-with col2:
-    block = st.selectbox("Block Number", options=LINE_BLOCKS.get(line, []))
-
-# --------------------------
-# 2️⃣ Search button
-if st.button("🚀 Find Vehicle"):
-    st.info(f"📡 Searching Line {line} / Block {block}...")
+    st.info(f"📡 Searching Line {line_number} / Block {block_number}...")
+    time.sleep(1)
 
     try:
-        # Request GTFS data from Render proxy
-        r = requests.get(PROXY_URL, timeout=10)
-        if r.status_code != 200:
-            st.error(f"GTFS request failed! Status code: {r.status_code}")
-        else:
-            # Parse GTFS Realtime feed
-            feed = gtfs_realtime_pb2.FeedMessage()
-            feed.ParseFromString(r.content)
+        response = requests.get(PROXY_URL, timeout=REQUEST_TIMEOUT)
 
-            found_vehicle = None
-            for entity in feed.entity:
-                if entity.HasField("trip_update"):
-                    trip_id = entity.trip_update.trip.trip_id
-                    # Match line + block in trip_id (T-Comm style)
-                    if f"_{line}_{block}" in trip_id:
-                        if entity.trip_update.vehicle.id:
-                            found_vehicle = entity.trip_update.vehicle.id
-                            break
+        if response.status_code != 200:
+            st.error(f"프록시 서버 오류 (status {response.status_code})")
+            st.stop()
 
-            # --------------------------
-            # 3️⃣ Display result
-            if found_vehicle:
-                st.success(f"🚍 Vehicle ID: {found_vehicle}")
-                st.markdown(
-                    f"[🔗 View live location on T-Comm](https://tcomm.bustrainferry.com/mobile/bus/{found_vehicle})"
-                )
-            else:
-                st.warning(
-                    "💤 No vehicle found currently in service. (It may be at the depot or not yet started)"
-                )
+        data = response.json()
 
-    except Exception as e:
+    except requests.exceptions.RequestException as e:
         st.error(f"⚠️ Error: {e}")
-        st.info("💡 Make sure the Render proxy server is up and network is working.")
+        st.info("💡 Render 프록시 서버가 깨어있는지 확인하세요.")
+        st.stop()
+
+    # =========================
+    # 데이터 파싱
+    # =========================
+    entities = data.get("entity", [])
+
+    results = []
+
+    for entity in entities:
+        vehicle = entity.get("vehicle")
+        if not vehicle:
+            continue
+
+        trip = vehicle.get("trip", {})
+        route_id = trip.get("route_id", "")
+        block_id = trip.get("block_id", "")
+
+        if route_id == line_number and block_id == block_number:
+            position = vehicle.get("position", {})
+            results.append({
+                "Route": route_id,
+                "Block": block_id,
+                "Latitude": position.get("latitude"),
+                "Longitude": position.get("longitude"),
+                "Vehicle ID": vehicle.get("vehicle", {}).get("id")
+            })
+
+    # =========================
+    # 결과 출력
+    # =========================
+    if not results:
+        st.warning("❌ 해당 Line / Block 조합의 버스를 찾지 못했습니다.")
+    else:
+        df = pd.DataFrame(results)
+        st.success("✅ Bus Found!")
+        st.dataframe(df)
