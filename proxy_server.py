@@ -4,7 +4,7 @@ import requests
 app = Flask(__name__)
 
 TRANS_LINK_URL = "https://gtfs.translink.ca/v2/gtfsrealtime"
-API_KEY = "여기에_너_API_KEY_그대로"
+API_KEY = "95CeGKk3M7wzbteE3cl"
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Vancouver Bus Finder)",
