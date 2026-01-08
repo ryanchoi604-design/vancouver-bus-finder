@@ -5,7 +5,7 @@ import os
 
 app = Flask(__name__)
 
-API_KEY = "YOUR_TRANS_LINK_API_KEY"  # 여기에 실제 TransLink API Key 넣기
+API_KEY = "i95CeGKk3M7wzbteE3cl"  # 여기에 실제 TransLink API Key 넣기
 GTFS_URL = f"https://gtfs.translink.ca/v2/gtfsrealtime?apikey={API_KEY}"
 
 @app.route("/gtfs")
