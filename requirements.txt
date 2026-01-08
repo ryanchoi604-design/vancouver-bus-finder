@@ -1,4 +1,5 @@
 streamlit
+pandas
 requests
-flask
 gtfs-realtime-bindings
+Flask
