@@ -1,16 +1,11 @@
-import os
 from flask import Flask, Response
 import requests
+import os
 
 app = Flask(__name__)
 
-TRANS_LINK_URL = "https://gtfs.translink.ca/v2/gtfsrealtime"
-API_KEY = "여기에_네_API_KEY"
-
-HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Vancouver Bus Finder)",
-    "Accept": "application/json"
-}
+API_KEY = os.environ.get("i95CeGKk3M7wzbteE3cl")
+GTFS_URL = f"https://gtfs.translink.ca/v2/gtfsrealtime?apikey={API_KEY}"
 
 @app.route("/")
 def home():
@@ -19,22 +14,14 @@ def home():
 @app.route("/gtfs")
 def gtfs_proxy():
     try:
-        r = requests.get(
-            TRANS_LINK_URL,
-            params={"apikey": API_KEY},
-            headers=HEADERS,
-            timeout=20
-        )
-
+        r = requests.get(GTFS_URL, timeout=15)
         return Response(
             r.content,
             status=r.status_code,
-            content_type=r.headers.get("Content-Type", "application/octet-stream")
+            content_type="application/octet-stream"
         )
-
     except Exception as e:
-        return Response(f"Proxy error: {e}", status=500)
-
+        return Response(str(e), status=500)
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
