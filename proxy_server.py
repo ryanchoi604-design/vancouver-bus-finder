@@ -1,21 +1,38 @@
-# proxy_server.py - Public Flask proxy
 from flask import Flask, Response
 import requests
-import os
 
 app = Flask(__name__)
 
-# TransLink API Key (Render Environment Variable로 설정)
-API_KEY = os.getenv("TRANS_LINK_API_KEY")
-GTFS_URL = f"https://gtfs.translink.ca/v2/gtfsrealtime?apikey={API_KEY}"
+TRANS_LINK_URL = "https://gtfs.translink.ca/v2/gtfsrealtime"
+API_KEY = "여기에_너_API_KEY_그대로"
+
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Vancouver Bus Finder)",
+    "Accept": "application/json"
+}
 
 @app.route("/gtfs")
 def gtfs_proxy():
     try:
-        r = requests.get(GTFS_URL, timeout=10)
-        return Response(r.content, status=r.status_code, content_type="application/octet-stream")
-    except Exception as e:
-        return Response(str(e), status=500)
+        response = requests.get(
+            TRANS_LINK_URL,
+            params={"apikey": API_KEY},
+            headers=HEADERS,
+            timeout=20
+        )
 
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)  # Render에서 공개용
+        return Response(
+            response.content,
+            status=response.status_code,
+            content_type=response.headers.get("Content-Type", "application/json")
+        )
+
+    except Exception as e:
+        return Response(
+            f"Proxy error: {e}",
+            status=500
+        )
+
+@app.route("/")
+def health_check():
+    return "Proxy server is running"
